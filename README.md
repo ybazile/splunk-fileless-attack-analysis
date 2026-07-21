@@ -196,4 +196,4 @@ This project demonstrates my ability to:
 
 **Yvener Bazile**
 
-Cloud Security • SOC Analyst • AWS • Splunk • Threat Hunting
+Cloud Security • SOC Analyst • Azure • Splunk • Threat Hunting
